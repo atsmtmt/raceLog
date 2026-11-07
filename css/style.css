@@ -11,6 +11,8 @@
   --cursor: #52514e;
   --tooltip-bg: rgba(252, 252, 251, 0.95);
   --accent: #2a78d6;
+  --map-veil: rgba(252, 252, 251, 0.18);
+  --map-halo: rgba(255, 255, 255, 0.9);
   --series-1: #2a78d6;
   --series-2: #eb6834;
   --series-3: #1baf7a;
@@ -34,6 +36,8 @@
     --cursor: #c3c2b7;
     --tooltip-bg: rgba(26, 26, 25, 0.95);
     --accent: #3987e5;
+    --map-veil: rgba(18, 18, 17, 0.35);
+    --map-halo: rgba(0, 0, 0, 0.85);
     --series-1: #3987e5;
     --series-2: #d95926;
     --series-3: #199e70;
@@ -57,6 +61,8 @@
   --cursor: #c3c2b7;
   --tooltip-bg: rgba(26, 26, 25, 0.95);
   --accent: #3987e5;
+  --map-veil: rgba(18, 18, 17, 0.35);
+  --map-halo: rgba(0, 0, 0, 0.85);
   --series-1: #3987e5;
   --series-2: #d95926;
   --series-3: #199e70;
@@ -170,7 +176,24 @@ body.loaded .dropzone { display: none; }
   gap: 12px;
 }
 .gg-panel .chart { aspect-ratio: 1 / 1; height: auto; }
-.track-panel .chart { flex: 1; min-height: 300px; }
+.map-wrap { position: relative; flex: 1; min-height: 300px; display: flex; }
+.track-panel .chart { flex: 1; min-height: 300px; border-radius: 4px; }
+.map-attribution {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  max-width: 100%;
+  padding: 1px 6px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  background: var(--tooltip-bg);
+  border-top-left-radius: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.map-attribution a { color: inherit; }
 
 /* ---- ラップ一覧 ---- */
 .lap-table-wrap { overflow: auto; max-height: 420px; }

@@ -62,8 +62,20 @@
       </section>
 
       <section class="panel track-panel">
-        <div class="panel-head"><h2>コース図</h2></div>
-        <canvas id="track-canvas" class="chart"></canvas>
+        <div class="panel-head">
+          <h2>コース図</h2>
+          <div class="controls">
+            <div class="seg" role="radiogroup" aria-label="地図背景">
+              <label><input type="radio" name="basemap" value="satellite" checked><span>航空写真</span></label>
+              <label><input type="radio" name="basemap" value="map"><span>地図</span></label>
+              <label><input type="radio" name="basemap" value="none"><span>なし</span></label>
+            </div>
+          </div>
+        </div>
+        <div class="map-wrap">
+          <canvas id="track-canvas" class="chart"></canvas>
+          <div id="map-attribution" class="map-attribution"></div>
+        </div>
       </section>
 
       <section class="panel laps-panel">

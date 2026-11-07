@@ -25,7 +25,25 @@
     onView(v) { state.view = v; requestDraw(); },
   });
   const ggChart = new GGChart($('gg-canvas'));
-  const trackMap = new TrackMap($('track-canvas'));
+  const trackMap = new TrackMap($('track-canvas'), requestDraw);
+
+  // 地図背景の選択（ブラウザに記憶）
+  const BASEMAP_KEY = 'raceLog.basemap';
+  function loadBasemapPref() {
+    try { return localStorage.getItem(BASEMAP_KEY) || 'satellite'; } catch (e) { return 'satellite'; }
+  }
+  function setBasemap(name, redraw = true) {
+    trackMap.setBasemap(name);
+    $('map-attribution').innerHTML = trackMap.attribution();
+    $('map-attribution').hidden = name === 'none';
+    document.querySelectorAll('input[name=basemap]').forEach((r) => { r.checked = r.value === name; });
+    try { localStorage.setItem(BASEMAP_KEY, name); } catch (e) { /* 保存できなくても動作に影響なし */ }
+    if (redraw) requestDraw();
+  }
+  document.querySelectorAll('input[name=basemap]').forEach((r) => {
+    r.addEventListener('change', () => setBasemap(r.value));
+  });
+  setBasemap(loadBasemapPref(), false);
 
   function slotColor(slot) {
     return getComputedStyle(document.documentElement).getPropertyValue('--series-' + slot).trim();
