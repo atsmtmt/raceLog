@@ -431,32 +431,61 @@
   }
 
   // ---------------------------------------------------------------------------
-  // コース図（緯度経度の走行ライン）
+  // コース図（緯度経度の走行ライン + 地図タイル背景）
   // ---------------------------------------------------------------------------
+
+  // API キー不要の地図タイル（Web メルカトル / XYZ 形式）
+  const BASEMAPS = {
+    satellite: {
+      url: (z, x, y) => 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/' + z + '/' + y + '/' + x,
+      maxZoom: 19,
+      attribution: 'Tiles © <a href="https://www.esri.com/" target="_blank" rel="noopener">Esri</a> — Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
+    },
+    map: {
+      url: (z, x, y) => 'https://tile.openstreetmap.org/' + z + '/' + x + '/' + y + '.png',
+      maxZoom: 19,
+      attribution: '© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors',
+    },
+  };
+
+  /** 緯度経度 → Web メルカトルの世界座標 (0..1) */
+  function mercator(lat, lon) {
+    const s = Math.sin((lat * Math.PI) / 180);
+    return [(lon + 180) / 360, 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)];
+  }
+
   class TrackMap {
-    constructor(canvas) {
+    constructor(canvas, onTileLoad) {
       this.canvas = canvas;
-      this.allLaps = [];
+      this.onTileLoad = onTileLoad || (() => {});
       this.series = [];
       this.range = null;
       this.xMode = 'time';
       this.cursorX = null;
+      this.basemap = 'satellite'; // 'satellite' | 'map' | 'none'
+      this.tiles = new Map(); // url -> Image
     }
 
     setAllLaps(laps) {
       // 全ラップの範囲で投影を固定（ラップ選択で地図が動かないように）
-      let latMin = Infinity, latMax = -Infinity, lonMin = Infinity, lonMax = -Infinity;
+      let xMin = Infinity, xMax = -Infinity, yMin = Infinity, yMax = -Infinity;
       for (const lap of laps) {
+        const wx = new Float64Array(lap.lat.length);
+        const wy = new Float64Array(lap.lat.length);
         for (let i = 0; i < lap.lat.length; i++) {
           const la = lap.lat[i], lo = lap.lon[i];
-          if (!la && !lo) continue;
-          if (la < latMin) latMin = la;
-          if (la > latMax) latMax = la;
-          if (lo < lonMin) lonMin = lo;
-          if (lo > lonMax) lonMax = lo;
+          if (!la && !lo) { wx[i] = NaN; wy[i] = NaN; continue; }
+          const [x, y] = mercator(la, lo);
+          wx[i] = x; wy[i] = y;
+          if (x < xMin) xMin = x;
+          if (x > xMax) xMax = x;
+          if (y < yMin) yMin = y;
+          if (y > yMax) yMax = y;
         }
+        lap.wx = wx;
+        lap.wy = wy;
       }
-      this.bounds = { latMin, latMax, lonMin, lonMax, k: Math.cos(((latMin + latMax) / 2) * Math.PI / 180) };
+      this.bounds = { xMin, xMax, yMin, yMax };
     }
 
     setData(series, xMode, range) {
@@ -465,37 +494,98 @@
       this.range = range;
     }
 
+    setBasemap(name) {
+      this.basemap = name;
+    }
+
+    attribution() {
+      const bm = BASEMAPS[this.basemap];
+      return bm ? bm.attribution : '';
+    }
+
+    tile(url) {
+      let img = this.tiles.get(url);
+      if (!img) {
+        img = new Image();
+        img.onload = () => this.onTileLoad();
+        img.onerror = () => { img.failed = true; };
+        img.src = url;
+        this.tiles.set(url, img);
+      }
+      return img.complete && !img.failed && img.naturalWidth ? img : null;
+    }
+
+    drawTiles(ctx, w, h, view, th) {
+      const bm = BASEMAPS[this.basemap];
+      if (!bm) return;
+      const dpr = window.devicePixelRatio || 1;
+      // 1 タイル (256px) が画面上でほぼ等倍になるズームレベルを選ぶ
+      const z = Math.max(0, Math.min(bm.maxZoom, Math.round(Math.log2((view.s * dpr) / 256))));
+      const n = Math.pow(2, z);
+      const tilePx = view.s / n;
+      const wx0 = view.x0 - view.ox / view.s;
+      const wy0 = view.y0 - view.oy / view.s;
+      const tx0 = Math.floor(wx0 * n);
+      const ty0 = Math.max(0, Math.floor(wy0 * n));
+      const tx1 = Math.floor((wx0 + w / view.s) * n);
+      const ty1 = Math.min(n - 1, Math.floor((wy0 + h / view.s) * n));
+      if ((tx1 - tx0 + 1) * (ty1 - ty0 + 1) > 400) return; // 念のための上限
+      for (let ty = ty0; ty <= ty1; ty++) {
+        for (let tx = tx0; tx <= tx1; tx++) {
+          const img = this.tile(bm.url(z, ((tx % n) + n) % n, ty));
+          if (!img) continue;
+          const px = view.ox + (tx / n - view.x0) * view.s;
+          const py = view.oy + (ty / n - view.y0) * view.s;
+          // タイル境界の隙間を防ぐため 0.5px 重ねる
+          ctx.drawImage(img, px, py, tilePx + 0.5, tilePx + 0.5);
+        }
+      }
+      // 走行ラインが見やすいよう背景を少し沈める
+      ctx.fillStyle = th.mapVeil;
+      ctx.fillRect(0, 0, w, h);
+    }
+
     draw() {
       const { ctx, w, h } = fitCanvas(this.canvas);
-      const th = theme();
+      const th = { ...theme(), mapVeil: cssVar('--map-veil'), halo: cssVar('--map-halo') };
       ctx.fillStyle = th.surface;
       ctx.fillRect(0, 0, w, h);
-      if (!this.bounds || !Number.isFinite(this.bounds.latMin)) return;
+      if (!this.bounds || !Number.isFinite(this.bounds.xMin)) return;
       const b = this.bounds;
-      const pad = 20;
-      const gw = (b.lonMax - b.lonMin) * b.k;
-      const gh = b.latMax - b.latMin;
+      const pad = 24;
+      const gw = Math.max(b.xMax - b.xMin, 1e-9);
+      const gh = Math.max(b.yMax - b.yMin, 1e-9);
       const s = Math.min((w - pad * 2) / gw, (h - pad * 2) / gh);
-      const ox = (w - gw * s) / 2;
-      const oy = (h - gh * s) / 2;
-      const toPx = (la, lo) => [ox + (lo - b.lonMin) * b.k * s, oy + (b.latMax - la) * s];
+      const view = { s, x0: b.xMin, y0: b.yMin, ox: (w - gw * s) / 2, oy: (h - gh * s) / 2 };
+      const toPx = (lap, i) => [view.ox + (lap.wx[i] - view.x0) * s, view.oy + (lap.wy[i] - view.y0) * s];
+
+      const hasMap = this.basemap !== 'none';
+      if (hasMap) this.drawTiles(ctx, w, h, view, th);
 
       ctx.lineJoin = 'round';
       ctx.lineCap = 'round';
       const zoomed = this.range !== null;
+      const stroke = (lap, i0, i1, color, width, alpha) => {
+        if (hasMap) {
+          // 航空写真の上でも見えるよう縁取りを付ける
+          ctx.globalAlpha = alpha;
+          ctx.strokeStyle = th.halo;
+          ctx.lineWidth = width + 2;
+          strokePath(ctx, lap, i0, i1, toPx);
+        }
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = color;
+        ctx.lineWidth = width;
+        strokePath(ctx, lap, i0, i1, toPx);
+      };
       for (const ser of this.series) {
         const lap = ser.lap;
         // ラップ全周（ズーム中は薄く）
-        ctx.strokeStyle = ser.color;
-        ctx.globalAlpha = zoomed ? 0.25 : 0.9;
-        ctx.lineWidth = 2;
-        strokePath(ctx, lap, 0, lap.lat.length - 1, toPx);
+        stroke(lap, 0, lap.lat.length - 1, ser.color, 2, zoomed ? (hasMap ? 0.45 : 0.25) : 0.95);
         if (zoomed) {
           const xs = this.xMode === 'time' ? lap.t : lap.dist;
           const [i0, i1] = rangeIndices(xs, this.range);
-          ctx.globalAlpha = 1;
-          ctx.lineWidth = 3;
-          strokePath(ctx, lap, i0, i1, toPx);
+          stroke(lap, i0, i1, ser.color, 3, 1);
         }
       }
       ctx.globalAlpha = 1;
@@ -507,15 +597,16 @@
           const xs = this.xMode === 'time' ? lap.t : lap.dist;
           if (this.cursorX > xs[xs.length - 1]) continue;
           const i = nearestIndex(xs, this.cursorX);
-          const [px, py] = toPx(lap.lat[i], lap.lon[i]);
-          ctx.strokeStyle = th.cursor;
-          ctx.lineWidth = 1;
+          if (!Number.isFinite(lap.wx[i])) continue;
+          const [px, py] = toPx(lap, i);
+          ctx.strokeStyle = hasMap ? th.halo : th.cursor;
+          ctx.lineWidth = hasMap ? 2 : 1;
           ctx.beginPath();
           ctx.moveTo(px - 14, py); ctx.lineTo(px + 14, py);
           ctx.moveTo(px, py - 14); ctx.lineTo(px, py + 14);
           ctx.stroke();
           ctx.fillStyle = ser.color;
-          ctx.strokeStyle = th.surface;
+          ctx.strokeStyle = hasMap ? th.halo : th.surface;
           ctx.lineWidth = 2;
           ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
         }
@@ -527,8 +618,8 @@
     ctx.beginPath();
     let started = false;
     for (let i = i0; i <= i1; i++) {
-      if (!lap.lat[i] && !lap.lon[i]) continue;
-      const [x, y] = toPx(lap.lat[i], lap.lon[i]);
+      if (!Number.isFinite(lap.wx[i])) continue;
+      const [x, y] = toPx(lap, i);
       if (!started) { ctx.moveTo(x, y); started = true; } else ctx.lineTo(x, y);
     }
     ctx.stroke();
