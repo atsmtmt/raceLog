@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RaceLog Viewer</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>RaceLog Viewer</h1>
+    <div class="file-info">
+      <span id="file-name"></span>
+      <span id="file-meta"></span>
+    </div>
+    <label class="btn">CSV を開く<input type="file" class="file-input" accept=".csv,text/csv" hidden></label>
+  </header>
+
+  <div id="error" class="error" hidden></div>
+
+  <section id="dropzone" class="dropzone">
+    <p class="drop-title">走行ログ CSV をここにドラッグ＆ドロップ</p>
+    <p class="drop-sub">TrackAddict / RaceRender 形式（Time, Lap, Latitude, Longitude, Speed (Km/h), Accel X, Accel Y 列）</p>
+    <div class="drop-actions">
+      <label class="btn primary">ファイルを選択<input type="file" class="file-input" accept=".csv,text/csv" hidden></label>
+      <button type="button" class="btn" id="load-sample">サンプルを読み込む</button>
+    </div>
+  </section>
+
+  <main id="viewer" class="viewer">
+    <section class="panel speed-panel">
+      <div class="panel-head">
+        <h2>速度</h2>
+        <div id="legend" class="legend"></div>
+        <div class="controls">
+          <div class="seg" role="radiogroup" aria-label="速度ソース" title="速度ソース">
+            <label><input type="radio" name="speedsrc" value="obd" checked><span>OBD車速</span></label>
+            <label><input type="radio" name="speedsrc" value="gps"><span>GPS速度</span></label>
+          </div>
+          <div class="seg" role="radiogroup" aria-label="横軸">
+            <label><input type="radio" name="xmode" value="time" checked><span>時間</span></label>
+            <label><input type="radio" name="xmode" value="dist"><span>距離</span></label>
+          </div>
+          <button type="button" class="btn small" id="reset-zoom">ズームリセット</button>
+        </div>
+      </div>
+      <canvas id="speed-canvas" class="chart"></canvas>
+      <p class="hint">速度は更新行の間を線形補間（GPS 約1Hz / OBD 約7Hz）。ホイール: ズーム ／ ドラッグ: 移動 ／ ダブルクリック: リセット。ズーム中の区間は G-G 図・コース図にも反映されます。</p>
+    </section>
+
+    <div class="bottom-row">
+      <section class="panel gg-panel">
+        <div class="panel-head">
+          <h2>G-G 図</h2>
+          <div class="controls checks">
+            <label><input type="checkbox" id="gg-swap">X/Y 入替</label>
+            <label><input type="checkbox" id="gg-invX">横反転</label>
+            <label><input type="checkbox" id="gg-invY">縦反転</label>
+          </div>
+        </div>
+        <canvas id="gg-canvas" class="chart square"></canvas>
+      </section>
+
+      <section class="panel track-panel">
+        <div class="panel-head"><h2>コース図</h2></div>
+        <canvas id="track-canvas" class="chart"></canvas>
+      </section>
+
+      <section class="panel laps-panel">
+        <div class="panel-head"><h2>ラップ</h2><span class="note">最大 8 ラップ</span></div>
+        <div class="lap-table-wrap">
+          <table class="lap-table">
+            <thead><tr><th>ラップ</th><th class="num">タイム</th><th class="num">差</th><th></th></tr></thead>
+            <tbody id="lap-rows"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <script src="js/parser.js"></script>
+  <script src="js/charts.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
